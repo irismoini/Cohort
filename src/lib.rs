@@ -1,3 +1,9 @@
+#![feature(atomic_from_mut)]
+
+pub mod ring;
+pub mod fail;
+pub mod raw_array;
+
 pub fn add(left: usize, right: usize) -> usize {
     left + right
 }
