@@ -46,7 +46,7 @@ impl<T> RawArray<T> {
 
         // Allocate underlying memory.
         let layout: Layout = match Layout::array::<T>(cap) {
-            Ok(layout) => layout,
+            Ok(layout) => layout.align_to(128).unwrap(),
             Err(_) => return Err(Fail::new(libc::EAGAIN, "failed to create memory layout for raw array")),
         };
         let ptr: ptr::NonNull<T> = {

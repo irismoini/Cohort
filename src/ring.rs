@@ -7,19 +7,14 @@
 // Imports
 //======================================================================================================================
 
-use crate::{
-    raw_array,
-    fail::Fail,
-};
-use ::core::{
+use crate::{fail::Fail, raw_array};
+use core::{
     alloc::Layout,
     mem,
-    sync::atomic::{
-        self,
-        AtomicUsize,
-    },
+    sync::atomic::{self, AtomicUsize},
 };
-use ::std::alloc;
+use std::alloc;
+use crate::util::Aligned;
 
 //======================================================================================================================
 // Structures
@@ -28,9 +23,9 @@ use ::std::alloc;
 /// A lock-free, single writer and single reader, fixed-size circular buffer.
 pub struct RingBuffer<T> {
     // Indexes the first empty slot after the item in the back of the ring buffer.
-    back_ptr: *mut usize,
+    back_ptr: Aligned<*mut usize>,
     // Indexes the first item in the front of the ring buffer.
-    front_ptr: *mut usize,
+    front_ptr: Aligned<*mut usize>,
     // Underlying buffer.
     buffer: raw_array::RawArray<T>,
     // Pre-computed capacity mask for the buffer.
@@ -80,8 +75,8 @@ where
         };
 
         Ok(RingBuffer {
-            back_ptr,
-            front_ptr,
+            back_ptr: Aligned(back_ptr),
+            front_ptr: Aligned(front_ptr),
             buffer: raw_array::RawArray::<T>::new(capacity)?,
             mask: capacity - 1,
             is_managed: true,
@@ -89,7 +84,11 @@ where
     }
 
     /// Constructs a ring buffer from raw parts.
-    pub fn from_raw_parts(init: bool, mut ptr: *mut u8, size: usize) -> Result<RingBuffer<T>, Fail> {
+    pub fn from_raw_parts(
+        init: bool,
+        mut ptr: *mut u8,
+        size: usize,
+    ) -> Result<RingBuffer<T>, Fail> {
         // Check if we have a valid pointer.
         if ptr.is_null() {
             return Err(Fail::new(
@@ -146,8 +145,8 @@ where
         }
 
         Ok(RingBuffer {
-            back_ptr,
-            front_ptr,
+            back_ptr: Aligned(back_ptr),
+            front_ptr: Aligned(front_ptr),
             buffer: raw_array::RawArray::<T>::from_raw_parts(buffer_ptr as *mut T, len)?,
             mask: len - 1,
             is_managed: false,
@@ -254,28 +253,36 @@ where
 
     /// Atomically gets the `front` index.
     fn get_front(&self) -> usize {
-        let front: &mut AtomicUsize = AtomicUsize::from_mut(unsafe { &mut *self.front_ptr });
+        let front: &mut AtomicUsize = AtomicUsize::from_mut(unsafe { &mut *self.front_ptr.0 });
         let front_cached: usize = front.load(atomic::Ordering::Relaxed);
         front_cached
     }
 
     /// Atomically sets the `front` index.
     fn set_front(&self, val: usize) {
-        let front: &AtomicUsize = AtomicUsize::from_mut(unsafe { &mut *self.front_ptr });
+        let front: &AtomicUsize = AtomicUsize::from_mut(unsafe { &mut *self.front_ptr.0 });
         front.store(val, atomic::Ordering::Relaxed);
     }
 
     /// Atomically gets the `back` index.
     fn get_back(&self) -> usize {
-        let back: &mut AtomicUsize = AtomicUsize::from_mut(unsafe { &mut *self.back_ptr });
+        let back: &mut AtomicUsize = AtomicUsize::from_mut(unsafe { &mut *self.back_ptr.0 });
         let back_cached: usize = back.load(atomic::Ordering::Relaxed);
         back_cached
     }
 
     /// Atomically sets the `back` index.
     fn set_back(&self, val: usize) {
-        let back: &AtomicUsize = AtomicUsize::from_mut(unsafe { &mut *self.back_ptr });
+        let back: &AtomicUsize = AtomicUsize::from_mut(unsafe { &mut *self.back_ptr.0 });
         back.store(val, atomic::Ordering::Relaxed);
+    }
+
+    pub fn get_front_ptr(&self) -> &*mut usize {
+        &self.front_ptr.0
+    }
+
+    pub fn get_back_ptr(&self) -> &*mut usize {
+        &self.back_ptr.0
     }
 }
 
@@ -297,8 +304,8 @@ impl<T> Drop for RingBuffer<T> {
             // Release underlying memory.
             let layout: Layout = Layout::new::<usize>();
             unsafe {
-                alloc::dealloc(self.back_ptr as *mut u8, layout);
-                alloc::dealloc(self.front_ptr as *mut u8, layout);
+                alloc::dealloc(self.back_ptr.0 as *mut u8, layout);
+                alloc::dealloc(self.front_ptr.0 as *mut u8, layout);
             }
             self.is_managed = false;
         }
@@ -312,9 +319,9 @@ impl<T> Drop for RingBuffer<T> {
 #[cfg(test)]
 mod test {
     use super::RingBuffer;
-    use ::anyhow::Result;
-    use ::core::mem;
-    use ::std::thread;
+    use anyhow::Result;
+    use core::mem;
+    use std::thread;
 
     /// Capacity for ring buffer.
     const RING_BUFFER_CAPACITY: usize = 4096;
@@ -340,7 +347,10 @@ mod test {
     fn do_from_raw(ptr: *mut u8, size: usize) -> Result<RingBuffer<u32>> {
         let ring: RingBuffer<u32> = match RingBuffer::<u32>::from_raw_parts(true, ptr, size) {
             Ok(ring) => ring,
-            Err(e) => anyhow::bail!("creating a ring buffer with valid capcity should be possible {:?}", e),
+            Err(e) => anyhow::bail!(
+                "creating a ring buffer with valid capcity should be possible {:?}",
+                e
+            ),
         };
 
         // Check if buffer has expected effective capacity.
