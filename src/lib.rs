@@ -1,45 +1,44 @@
 #![feature(atomic_from_mut)]
 
-pub(crate) mod fail;
-pub(crate) mod raw_array;
-pub(crate) mod ring;
+mod fifo;
 pub(crate) mod util;
 
-use std::marker::PhantomPinned;
-use std::pin::Pin;
-use std::sync::atomic::AtomicU64;
+use core::marker::PhantomPinned;
+use core::pin::Pin;
+use core::sync::atomic::AtomicU64;
 
-use crate::ring::RingBuffer;
+use fifo::CohortFifo;
+
 use crate::util::Aligned;
 
 const BACKOFF_COUNTER_VAL: u64 = 240;
 
-struct Cohort<T> {
-    sender: RingBuffer<T>,
-    receiver: RingBuffer<T>,
+pub struct Cohort<T: Copy> {
+    sender: CohortFifo<T>,
+    receiver: CohortFifo<T>,
     acc: Aligned<AtomicU64>,
     // Prevents compiler from implementing unpin trait
-    _pin: PhantomPinned
+    _pin: PhantomPinned,
 }
 
 impl<T: Copy> Cohort<T> {
     pub fn register(capacity: usize) -> Pin<Box<Self>> {
-        let sender = RingBuffer::new(capacity).unwrap();
-        let receiver = RingBuffer::new(capacity).unwrap();
+        let sender = CohortFifo::new(capacity);
+        let receiver = CohortFifo::new(capacity);
         let acc = Aligned(AtomicU64::new(0));
 
         let cohort = Box::pin(Cohort {
             sender,
             receiver,
             acc,
-            _pin: PhantomPinned
+            _pin: PhantomPinned,
         });
 
         unsafe {
             libc::syscall(
                 258,
-                cohort.sender.get_front_ptr(),
-                cohort.receiver.get_back_ptr(),
+                &cohort.sender,
+                &cohort.receiver,
                 &(cohort.acc.0),
                 BACKOFF_COUNTER_VAL,
             );
@@ -50,17 +49,20 @@ impl<T: Copy> Cohort<T> {
 
     /// Sends an element to the accelerator.
     pub fn push(&self, elem: T) {
-        todo!();
+        self.sender.push(elem);
     }
 
     /// Reads an element from the accelerator.
     pub fn pop(&self) -> T {
-        todo!();
+        self.receiver.pop()
     }
 }
 
-impl<T> Drop for Cohort<T> {
+impl<T: Copy> Drop for Cohort<T> {
     fn drop(&mut self) {
-        // Unregister thorugh specific syscall.
+        unsafe {
+            //TODO: check status from syscall
+            libc::syscall(257);
+        }
     }
 }
