@@ -14,23 +14,25 @@ use crate::util::Aligned;
 const BACKOFF_COUNTER_VAL: u64 = 240;
 
 pub struct Cohort<T: Copy> {
+    id: u8,
     sender: CohortFifo<T>,
     receiver: CohortFifo<T>,
-    acc: Aligned<AtomicU64>,
+    custom_data: Aligned<AtomicU64>, //TODO: Determine type
     // Prevents compiler from implementing unpin trait
     _pin: PhantomPinned,
 }
 
 impl<T: Copy> Cohort<T> {
-    pub fn register(capacity: usize) -> Pin<Box<Self>> {
+    pub fn register(id: u8, capacity: usize) -> Pin<Box<Self>> {
         let sender = CohortFifo::new(capacity);
         let receiver = CohortFifo::new(capacity);
-        let acc = Aligned(AtomicU64::new(0));
+        let custom_data = Aligned(AtomicU64::new(0));
 
         let cohort = Box::pin(Cohort {
+            id,
             sender,
             receiver,
-            acc,
+            custom_data,
             _pin: PhantomPinned,
         });
 
@@ -39,7 +41,7 @@ impl<T: Copy> Cohort<T> {
                 258,
                 &cohort.sender,
                 &cohort.receiver,
-                &(cohort.acc.0),
+                &(cohort.custom_data.0),
                 BACKOFF_COUNTER_VAL,
             );
         }

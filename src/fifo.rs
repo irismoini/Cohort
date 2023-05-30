@@ -3,7 +3,7 @@ use core::ptr::NonNull;
 
 #[repr(packed)]
 pub struct Meta<T> {
-    addr: *mut T,
+    buffer: NonNull<T>,
     size: u32,
     len: u32,
 }
