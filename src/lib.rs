@@ -14,7 +14,7 @@ use crate::util::Aligned;
 const BACKOFF_COUNTER_VAL: u64 = 240;
 
 pub struct Cohort<T: Copy> {
-    id: u8,
+    _id: u8,
     sender: CohortFifo<T>,
     receiver: CohortFifo<T>,
     custom_data: Aligned<AtomicU64>, //TODO: Determine type
@@ -29,7 +29,7 @@ impl<T: Copy> Cohort<T> {
         let custom_data = Aligned(AtomicU64::new(0));
 
         let cohort = Box::pin(Cohort {
-            id,
+            _id: id,
             sender,
             receiver,
             custom_data,
