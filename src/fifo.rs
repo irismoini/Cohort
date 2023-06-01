@@ -24,7 +24,8 @@ impl<T: Copy> CohortFifo<T> {
     // Creates new fifo.
     pub fn new(capacity: usize) -> Self {
         let buffer = unsafe {
-            let layout = Layout::array::<T>(capacity).unwrap();
+            let buffer_size = capacity + 1;
+            let layout = Layout::array::<T>(buffer_size).unwrap();
             let aligned = layout.align_to(128).unwrap();
             NonNull::new(alloc(aligned)).unwrap()
         };
@@ -40,9 +41,9 @@ impl<T: Copy> CohortFifo<T> {
         }
     }
 
-    pub fn try_push(&self, elem: T) -> Result<(), ()> {
+    pub fn try_push(&self, elem: T) -> Result<(), T> {
         if self.is_full() {
-            return Err(());
+            return Err(elem);
         }
 
         let tail = self.tail();
@@ -84,14 +85,19 @@ impl<T: Copy> CohortFifo<T> {
         self.meta.0.capacity as usize
     }
 
-    // TODO: Determine cohort semantics
-    pub fn is_full(&self) -> bool {
-        todo!();
+    /// True size of the underlying buffer.
+    // Should always be one more than the given capacity.
+    // The extra allocated slot in the buffer is used to determine whether the buffer is full (it does not hold an additional element).
+    fn buffer_size(&self) -> usize {
+        (self.meta.0.capacity + 1) as usize
     }
 
-    // TODO: Determine cohort semantics
+    pub fn is_full(&self) -> bool {
+        (self.head() % self.buffer_size()) == ((self.tail() + 1) % self.buffer_size())
+    }
+
     pub fn is_empty(&self) -> bool {
-        todo!();
+        self.head() == self.tail()
     }
 
     fn head(&self) -> usize {
@@ -123,7 +129,7 @@ unsafe impl<T: Copy> Send for CohortFifo<T> {}
 
 impl<T: Copy> Drop for CohortFifo<T> {
     fn drop(&mut self) {
-        let layout = Layout::array::<T>(self.capacity()).unwrap();
+        let layout = Layout::array::<T>(self.buffer_size()).unwrap();
         let aligned = layout.align_to(128).unwrap();
         unsafe { dealloc(self.meta.0.buffer.cast().as_ptr(), aligned) };
     }

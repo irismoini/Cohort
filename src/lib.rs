@@ -1,4 +1,22 @@
+//! The Cohort crate provides an high-level interface to Cohort.
+//!
+//! Cohort enables simple and efficent communication to various hardware
+//! accelerators through a software-oriented acceleration (SOA) approach.
+//!
+//! For more information see: [Cohort: Software-Oriented Acceleration for Heterogeneous SoCs](https://dl.acm.org/doi/10.1145/3582016.3582059)
+//!
+//! # Examples
+//!
+//! ```no_run
+//! // SAFETY: No other cohorts are associated with id 0.
+//! let cohort = unsafe { Cohort::register(0, 32) };
+//! // Send data to the accelerator.
+//! cohort.push(10);
+//! // Get data from the accelerator.
+//! let data = cohort.pop();
+//! ```
 #![feature(atomic_from_mut)]
+#![warn(missing_docs)]
 
 mod fifo;
 pub(crate) mod util;
@@ -13,6 +31,16 @@ use crate::util::Aligned;
 
 const BACKOFF_COUNTER_VAL: u64 = 240;
 
+/// a single-producer, single-consumer (SPSC) interface used to communciate with hardware accelerators.
+///
+/// ```no_run
+/// // SAFETY: No other cohorts are associated with id 0.
+/// let cohort = unsafe { Cohort::register(0, 32) };
+/// // Send data to the accelerator.
+/// cohort.push(10);
+/// // Get data from the accelerator.
+/// let data = cohort.pop();
+/// ```
 pub struct Cohort<T: Copy> {
     _id: u8,
     sender: CohortFifo<T>,
@@ -23,7 +51,12 @@ pub struct Cohort<T: Copy> {
 }
 
 impl<T: Copy> Cohort<T> {
-    pub fn register(id: u8, capacity: usize) -> Pin<Box<Self>> {
+    /// Registers a cohort with the provided id with the given capacity.
+    ///
+    /// # Safety
+    ///
+    /// The cohort id must not currently be in use.
+    pub unsafe fn register(id: u8, capacity: usize) -> Pin<Box<Self>> {
         let sender = CohortFifo::new(capacity);
         let receiver = CohortFifo::new(capacity);
         let custom_data = Aligned(AtomicU64::new(0));
@@ -50,13 +83,31 @@ impl<T: Copy> Cohort<T> {
     }
 
     /// Sends an element to the accelerator.
+    ///
+    /// May block if the sending end is full.
     pub fn push(&self, elem: T) {
         self.sender.push(elem);
     }
 
-    /// Reads an element from the accelerator.
+    /// Receives an element from the accelerator.
+    ///
+    /// May block if the receiving end is full.
     pub fn pop(&self) -> T {
         self.receiver.pop()
+    }
+
+    /// Sends an element to the accelerator.
+    ///
+    /// Will fail if the sending end is full.
+    pub fn try_push(&self, elem: T) -> Result<(), T> {
+        self.sender.try_push(elem)
+    }
+
+    /// Receives an element from the accelerator.
+    ///
+    /// Will fail if receiving end is full.
+    pub fn try_pop(&self) -> Result<T, ()> {
+        self.receiver.try_pop()
     }
 }
 
