@@ -9,8 +9,8 @@ use std::{
 #[repr(packed)]
 pub struct Meta<T> {
     buffer: NonNull<T>,
-    _elem_size: u32, // TODO: Determine what this actually is in cohort
-    capacity: u32,   // TODO: Determine what this actually is in cohort
+    _elem_size: u32,
+    capacity: u32,
 }
 
 #[repr(C)]
