@@ -15,6 +15,7 @@ pub struct Meta<T> {
 
 #[repr(C)]
 pub struct CohortFifo<T: Copy> {
+    // Cohort requires that these fields be 128 byte alligned and in the specified order.
     head: Aligned<UnsafeCell<u32>>,
     meta: Aligned<Meta<T>>,
     tail: Aligned<UnsafeCell<u32>>,
@@ -86,9 +87,9 @@ impl<T: Copy> CohortFifo<T> {
     }
 
     /// True size of the underlying buffer.
-    // Should always be one more than the given capacity.
-    // The extra allocated slot in the buffer is used to determine whether the buffer is full (it does not hold an additional element).
     fn buffer_size(&self) -> usize {
+        // Should always be one more than the given capacity.
+        // The extra allocated slot in the buffer is used to determine whether the buffer is full.
         (self.meta.0.capacity + 1) as usize
     }
 
